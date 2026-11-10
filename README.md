@@ -1,4 +1,4 @@
-# Klassischer Rechner 1.3.0 – Linux Mint x64
+# Klassischer Rechner 1.3.0 – Linux x64
 
 | Rechnermodi | Verlauf und Zusatzfunktionen |
 | :---: | :---: |
