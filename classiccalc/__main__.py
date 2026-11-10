@@ -1,0 +1,43 @@
+"""Command-line entry point. python3 -m classiccalc"""
+from __future__ import annotations
+import argparse
+import sys
+from . import __version__
+from .engine import MODES
+from .i18n import tr, normalize_input
+
+
+def main() -> int:
+    parser=argparse.ArgumentParser(description="Klassischer Rechner — nativer Taschenrechner für Linux")
+    parser.add_argument("--version",action="version",version=f"Classic Calc {__version__}")
+    parser.add_argument("--mode",choices=[mode.lower() for mode in MODES],help="anfänglicher Rechnermodus")
+    parser.add_argument("--fresh",action="store_true",help="Einstellungen und Verlauf weder laden noch speichern")
+    parser.add_argument("--scale",type=float,default=1.0,help="Oberflächenskalierung: 0.75 bis 3.0 (Standard: 1)")
+    parser.add_argument("--eval",metavar="EXPRESSION",help="Ausdruck ohne grafische Oberfläche berechnen")
+    args=parser.parse_args()
+    if args.eval is not None:
+        from .mathlib import evaluate,format_number,CalcError
+        try:
+            print(format_number(evaluate(normalize_input(args.eval),immediate=args.mode=="standard")))
+            return 0
+        except CalcError as exc:
+            print(f"Fehler: {tr(str(exc))}",file=sys.stderr);return 2
+    if not .75<=args.scale<=3:
+        parser.error("--scale muss zwischen 0.75 und 3.0 liegen")
+    try:
+        import tkinter as tk
+        from .ui import CalculatorApp
+    except ImportError:
+        print("Tk fehlt. Unter Linux Mint ausführen: sudo apt install python3-tk",file=sys.stderr)
+        return 1
+    try:root=tk.Tk(className="ClassicCalc")
+    except tk.TclError as exc:
+        print(f"Grafische Anzeige kann nicht geöffnet werden: {exc}\nStarten Sie das Programm in einer Desktop-Sitzung.",file=sys.stderr)
+        return 1
+    CalculatorApp(root,mode=args.mode.capitalize() if args.mode else None,fresh=args.fresh,scale=args.scale)
+    root.mainloop()
+    return 0
+
+
+if __name__=="__main__":
+    raise SystemExit(main())
