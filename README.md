@@ -1,7 +1,16 @@
 # Klassischer Rechner 1.1.0 – deutsche Linux-Version
 
-Entwickelte Nachbildung des klassischen Windows-7-Rechners als
-native Python/Tk-Anwendung. Zielplattform ist Linux Mint x64.
+| Rechnermodi | Verlauf und Zusatzfunktionen |
+| :---: | :---: |
+| **Standardmodus**<br>![Standardmodus](screenshots/standard.png) | **Rechtsbündiger Verlauf**<br>![Rechtsbündiger Verlauf](screenshots/history.png) |
+| **Wissenschaftlicher Modus**<br>![Wissenschaftlicher Modus](screenshots/scientific.png) | **Kontextmenü des Verlaufs**<br>![Kontextmenü des Verlaufs](screenshots/history-context.png) |
+| **Programmierermodus**<br>![Programmierermodus](screenshots/programmer.png) | **Einheitenumrechnung**<br>![Einheitenumrechnung](screenshots/conversion.png) |
+| **Statistikmodus**<br>![Statistikmodus](screenshots/statistics.png) | **Datumsberechnung**<br>![Datumsberechnung](screenshots/dates.png) |
+| **Inverse wissenschaftliche Funktionen**<br>![Inverse wissenschaftliche Funktionen](screenshots/inverse.png) | **Hypothekenberechnung**<br>![Hypothekenberechnung](screenshots/mortgage.png) |
+
+Eigenständig entwickelte Nachbildung des klassischen Windows-7-Rechners als
+native Python/Tk-Anwendung. Die Windows-Datei `calc.exe` wird nicht benötigt,
+nicht ausgeführt und nicht mitgeliefert. Zielplattform ist Linux Mint x64.
 
 ## Änderungen in 1.1.0
 
