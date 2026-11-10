@@ -1,0 +1,50 @@
+KLASSISCHER RECHNER 1.3.0 – WINDOWS 10 X64
+
+QUELLCODEPAKET
+1. Den gesamten ZIP-Inhalt entpacken; nicht direkt im ZIP starten.
+2. Python 3.13 (64 Bit) mit Tcl/Tk und Python Launcher installieren.
+3. Start.cmd doppelklicken. Alternativ: py -3.13 app.py
+   Start-Konsole.cmd zeigt Diagnosemeldungen.
+
+EIGENE EXE ERSTELLEN
+In diesem Quellcodeordner build-windows.cmd ausführen.
+Der erste Build installiert PyInstaller in .venv-build (Internetzugriff nötig).
+Danach: dist\KlassischerRechner\KlassischerRechner.exe
+Den GANZEN Ordner dist\KlassischerRechner weitergeben, nicht nur die EXE.
+Ein portables ZIP wird zusätzlich unter dist erstellt.
+Eine einzelne EXE: build-windows.cmd --onefile
+
+FERTIGES PORTABLES PAKET (NACH EIGENEM BUILD)
+Den gesamten Programmordner entpacken und KlassischerRechner.exe starten.
+Python muss auf dem Zielrechner dann nicht separat installiert sein.
+Kein Administratorstart erforderlich. Kein Austausch von Windows calc.exe.
+
+BEDIENUNG
+Deutsch ist voreingestellt (Dezimalkomma).
+Ansicht > Sprache > English wechselt ohne Neustart zu Englisch (Dezimalpunkt).
+Zurück: View > Language > Deutsch. Die Auswahl wird gespeichert.
+Rechnung, Speicher, Verläufe und Eingaben bleiben beim Wechsel erhalten.
+Ansicht > Verlauf oder Strg+H: rechtsbündigen Verlauf ein-/ausblenden,
+ausdrücklich auch im Standardmodus und bei umgebrochenen Zeilen.
+Die hellen Auf-/Ab-Pfeile oben rechts blättern den Verlauf zeilenweise.
+Am Rand sind sie deaktiviert; Rechnung und Daten werden nicht geändert.
+Rechtsklick im Verlauf:
+  Kopieren / Einfügen / Verlauf ausblenden / Verlauf löschen
+Kopieren bezieht sich auf das Ergebnis des angeklickten Verlaufseintrags.
+Einfügen übernimmt die Zwischenablage in den Rechner.
+Ausblenden bewahrt die Daten. Löschen betrifft nur den aktuellen Modus.
+
+DATEN
+%APPDATA%\ClassicCalc\state.json
+Beispiel: C:\Users\Sam\AppData\Roaming\ClassicCalc\state.json
+Fehlerprotokoll beim Start ohne Konsole: derselbe Ordner, error.log.
+
+Windows-Systemskalierung wird beim Start übernommen. Mit Ansicht >
+Oberflächengröße oder --scale 1.5 kann eine feste Größe gewählt werden.
+Es wird keine dynamische Per-Monitor-DPI-Anpassung behauptet.
+
+PRÜFUMFANG DIESER LIEFERUNG
+Der Quellcode wurde unter Linux/Tk getestet. Eine Windows-EXE ist in dieser
+Quellcodelieferung NICHT enthalten; der Windows-Build wurde hier nicht ausgeführt.
+Die Screenshots zeigen Linux/Tk-Referenzansichten, keine Windows-Aufnahmen.
+Siehe README.md, TEST_REPORT.md und PORTING_NOTES.md.

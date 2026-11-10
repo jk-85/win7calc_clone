@@ -7,7 +7,7 @@ from .i18n import tr
 
 
 class LocalizedCombobox(ttk.Combobox):
-    """Keep stable canonical values separate from German dropdown labels."""
+    """Keep stable canonical values separate from translated dropdown labels."""
     def __init__(self, parent, *, textvariable, values, **kwargs):
         self.canonical = textvariable
         self.presented = tk.StringVar(parent, tr(textvariable.get()))
@@ -66,7 +66,8 @@ class HistoryView(tk.Text):
         self.entries: tuple[str, ...] = ()
         self._selection: int | None = None
         self.tag_configure("right", justify="right")
-        self.tag_configure("selected", background="#bed6f4", foreground="#172c43")
+        self.tag_configure("selected", background="#bed6f4", foreground="#172c43", justify="right")
+        self.tag_configure("sel", justify="right")
         self.bind("<Button-1>", self._click)
         self.bind("<B1-Motion>", lambda e: "break")
         self.bind("<Button-2>", lambda e: "break")
@@ -95,7 +96,10 @@ class HistoryView(tk.Text):
         self.configure(state="normal")
         self.delete("1.0", "end")
         self.insert("1.0", "\n".join(entries), "right")
+        # Tag every character, including newline and the final empty paragraph.
+        # A wrapped display line takes its alignment from its first character.
         self.tag_add("right", "1.0", "end")
+        self.tag_raise("right")
         self.configure(state="disabled")
         self._selection = None
         if old_selection is not None and entries:

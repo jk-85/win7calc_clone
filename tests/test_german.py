@@ -3,6 +3,7 @@ import ast
 from datetime import date
 import json
 import os
+import sys
 from pathlib import Path
 import tempfile
 import tkinter as tk
@@ -65,7 +66,7 @@ class GermanFormatTests(unittest.TestCase):
     def test_engine_error_messages_covered(self):
         folder = Path(__file__).parents[1] / 'classiccalc'
         for name in ('engine.py', 'mathlib.py', 'tools.py'):
-            tree = ast.parse((folder/name).read_text())
+            tree = ast.parse((folder/name).read_text(encoding='utf-8'))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'CalcError':
                     for child in ast.walk(node):
@@ -73,7 +74,7 @@ class GermanFormatTests(unittest.TestCase):
                             self.assertIn(child.value, TRANSLATIONS, (name, child.value))
 
 
-@unittest.skipUnless(os.environ.get('DISPLAY'), 'GUI tests need X11 or xvfb-run')
+@unittest.skipUnless((sys.platform == 'win32' or bool(os.environ.get('DISPLAY'))), 'GUI tests need a Windows desktop or X11/Xvfb')
 class GermanGuiTests(unittest.TestCase):
     def setUp(self):
         self.root = tk.Tk()
@@ -104,6 +105,20 @@ class GermanGuiTests(unittest.TestCase):
         self.root.update()
         widget.event_generate(sequence)
         self.root.update()
+
+    def post_context_for_test(self, trigger):
+        # Win32 TrackPopupMenu is modal. Mock only native posting there so the
+        # unattended suite does not wait for a human click. The widget event,
+        # row selection, menu labels and command callbacks remain real.
+        if self.root.tk.call('tk', 'windowingsystem') == 'win32':
+            with patch.object(tk.Menu, 'tk_popup', autospec=True) as posted:
+                trigger()
+                self.root.update()
+                posted.assert_called_once()
+        else:
+            trigger()
+            self.root.update()
+            self.assertTrue(self.app.context_menu.winfo_ismapped())
 
     def test_window_and_menus_german(self):
         self.assertEqual(self.root.title(), 'Rechner')
@@ -171,10 +186,8 @@ class GermanGuiTests(unittest.TestCase):
 
     def test_actual_right_click_posts_menu_and_selects_row(self):
         history = self.show_history()
-        history.event_generate('<Button-3>', x=10, y=8, rootx=80, rooty=80)
-        self.root.update()
+        self.post_context_for_test(lambda: history.event_generate('<Button-3>', x=10, y=8, rootx=80, rooty=80))
         self.assertIsNotNone(self.app.context_menu)
-        self.assertTrue(self.app.context_menu.winfo_ismapped())
         self.assertEqual(history.curselection(), (0,))
         self.app.context_menu.invoke(0)
         self.assertEqual(self.root.clipboard_get(), '5')
@@ -258,8 +271,7 @@ class GermanGuiTests(unittest.TestCase):
 
     def test_context_keyboard_shortcut(self):
         history = self.show_history()
-        self.press(history, '<Shift-F10>')
-        self.assertTrue(self.app.context_menu.winfo_ismapped())
+        self.post_context_for_test(lambda: self.press(history, '<Shift-F10>'))
         self.assertEqual(self.app.context_menu.entrycget(3, 'label'), 'Verlauf ausblenden')
         self.app.context_menu.unpost()
 
@@ -332,7 +344,7 @@ class GermanGuiTests(unittest.TestCase):
             self.assertEqual(self.app.stats_list.get(0, 'end'), ('1,5', '2,25', '3,125'))
             with patch('classiccalc.ui.filedialog.asksaveasfilename', return_value=str(target)):
                 self.app.export_samples()
-            self.assertEqual(target.read_text(), '1,5\n2,25\n3,125\n')
+            self.assertEqual(target.read_text(encoding='utf-8'), '1,5\n2,25\n3,125\n')
 
     def test_old_english_settings_load_without_data_loss(self):
         state = {
@@ -355,7 +367,7 @@ class GermanGuiTests(unittest.TestCase):
             self.assertEqual(self.app.worksheet_inputs['rate'].get(), '5,5')
             self.app.fresh = False
             self.app.save_state()
-            saved = json.loads(self.app.config_path.read_text())
+            saved = json.loads(self.app.config_path.read_text(encoding='utf-8'))
             self.assertEqual(saved['worksheets']['Mortgage']['values']['rate'], '5.5')
             self.assertEqual(saved['history'], state['history'])
             self.assertEqual(saved['unit'], state['unit'])
@@ -380,7 +392,7 @@ class GermanGuiTests(unittest.TestCase):
             self.app.switch_aux('Unit conversion')
             self.app.conv_input.set('1,25')
             self.app.save_state()
-            self.assertEqual(json.loads(self.app.config_path.read_text())['number_format'], 'canonical')
+            self.assertEqual(json.loads(self.app.config_path.read_text(encoding='utf-8'))['number_format'], 'canonical')
             self.app.load_state()
             self.app.build()
             self.assertEqual(self.app.conv_input.get(), '1,25')

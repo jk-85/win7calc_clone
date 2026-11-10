@@ -1,6 +1,7 @@
 """Run on a desktop or with xvfb-run -a python3 -m unittest tests.test_gui -v."""
 import json
 import os
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -11,7 +12,7 @@ from classiccalc.i18n import normalize_input
 from classiccalc.tools import WORKSHEETS
 
 
-@unittest.skipUnless(os.environ.get('DISPLAY'), 'GUI tests need a display (use xvfb-run -a)')
+@unittest.skipUnless((sys.platform == 'win32' or bool(os.environ.get('DISPLAY'))), 'GUI tests need a Windows desktop or X11/Xvfb')
 class GuiTests(unittest.TestCase):
     def setUp(self):
         self.root=tk.Tk();self.errors=[]
@@ -111,11 +112,12 @@ class GuiTests(unittest.TestCase):
             self.app.config_path=Path(directory)/'state.json';self.app.fresh=False
             self.app.switch_mode('Scientific');self.app.calc.paste('42');self.app.calc.memory_action('MS')
             self.app.calc.equals();self.app.calc.samples=[D('1.5'),D('2.5')];self.app.save_state()
-            data=json.loads(self.app.config_path.read_text());self.assertEqual(data['memory'],'42')
+            data=json.loads(self.app.config_path.read_text(encoding='utf-8'));self.assertEqual(data['memory'],'42')
             self.app.calc.clear();self.app.calc.history=[];self.app.calc.samples=[];self.app.load_state()
             self.assertEqual(self.app.calc.memory,42);self.assertEqual(len(self.app.calc.history),1)
             self.assertEqual(self.app.calc.samples,[D('1.5'),D('2.5')])
-            self.assertEqual(self.app.config_path.stat().st_mode & 0o777,0o600)
+            if os.name != 'nt':
+                self.assertEqual(self.app.config_path.stat().st_mode & 0o777,0o600)
     def test_corrupt_state(self):
         with tempfile.TemporaryDirectory() as directory:
             self.app.config_path=Path(directory)/'state.json';self.app.config_path.write_text('not json');self.app.load_state()

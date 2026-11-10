@@ -1,69 +1,30 @@
-$ dpkg-deb --info /mnt/data/classic-calc_1.1.0_all.deb
- new Debian package, version 2.0.
- size 47384 bytes: control archive=576 bytes.
-     571 bytes,    13 lines      control
- Package: classic-calc
- Version: 1.1.0
- Section: math
- Priority: optional
- Architecture: all
- Maintainer: Classic Calc contributors
- Depends: python3 (>= 3.10), python3-tk
- Installed-Size: 260
- Description: Native classic-style scientific, programmer and statistics calculator
-  Independently written calculator inspired by the classic Windows 7 interface.
-  Includes standard, scientific, fixed-width programmer and statistics modes,
-  97 units across 11 conversion categories, date arithmetic, mortgage,
-  vehicle lease and fuel economy worksheets. No Wine or Windows files needed.
+Version 1.3.0; packaging host: Debian 13 x86-64; Python 3.13.5; Tk 8.6.16
+No native Windows executable built or run.
+[build Linux zipapp]
+/mnt/data/classic-calc-linux-1.3.0.pyz
+[build Windows GUI zipapp (Python source bundle, not EXE)]
+/mnt/data/classic-calc-windows-1.3.0.pyzw
+[build DEB]
+dpkg-deb: building package 'classic-calc' in '/mnt/data/classic-calc_1.3.0_all.deb'.
+[inspect DEB]
+Package: classic-calc
+Version: 1.3.0
+Architecture: all
+Depends: python3 (>= 3.10), python3-tk
+[Linux zipapp smoke test]
+[Windows GUI zipapp smoke test on LINUX]
+[app.pyw smoke test on LINUX]
+[DEB extraction and its Python entry point]
+[CLI outputs in DE/EN]
+1237
+1237
+verification/deb-smoke.json PASS 24 checks; linux 64-bit
+verification/pyw-smoke.json PASS 24 checks; linux 64-bit
+verification/pyz-smoke.json PASS 24 checks; linux 64-bit
+verification/pyzw-smoke.json PASS 24 checks; linux 64-bit
+verification/source-smoke.json PASS 24 checks; linux 64-bit
+engine.py unchanged from 1.2.0: 1f2d95b308bacdb07cede257a5ea3801e353a296bb15f5a7a3a4f0a42944d2cb
+mathlib.py unchanged from 1.2.0: 7011f8e5278ed6aba5cf26c7de2ed8d3a7ca6574aa577f9609ba5e99c69e4e02
+tools.py unchanged from 1.2.0: 136dfd71beb9deba6c78331f256e7ca9790ca973280fdafcea78876387a480cc
 
-$ dpkg-deb --extract /mnt/data/classic-calc_1.1.0_all.deb /tmp/tmp7chhnvku/payload
-
-$ /usr/bin/python3 /tmp/tmp7chhnvku/payload/usr/share/classic-calc/app.py --version
-Classic Calc 1.1.0
-
-$ /usr/bin/python3 /tmp/tmp7chhnvku/payload/usr/share/classic-calc/app.py --eval 1,5+2,25
-3.75
-
-$ /usr/bin/python3 /tmp/tmp7chhnvku/payload/usr/share/classic-calc/app.py --mode standard --eval 2+3*4
-20
-
-$ /usr/bin/python3 /tmp/tmp7chhnvku/payload/usr/share/classic-calc/app.py --mode scientific --eval 2+3*4
-14
-
-GUI smoke test PASS: app.py; alive after startup; no stderr.
-
-$ /usr/bin/python3 /mnt/data/classic-calc-de-1.1.0.pyz --version
-Classic Calc 1.1.0
-
-$ /usr/bin/python3 /mnt/data/classic-calc-de-1.1.0.pyz --eval 1,5+2,25
-3.75
-
-$ /usr/bin/python3 /mnt/data/classic-calc-de-1.1.0.pyz --mode standard --eval 2+3*4
-20
-
-$ /usr/bin/python3 /mnt/data/classic-calc-de-1.1.0.pyz --mode scientific --eval 2+3*4
-14
-
-GUI smoke test PASS: classic-calc-de-1.1.0.pyz; alive after startup; no stderr.
-
-$ sh /mnt/data/german-update/classic-calc/install.sh
-Installiert. Öffnen Sie „Klassischer Rechner“ im Anwendungsmenü.
-Alternativ ausführen: /tmp/tmp7chhnvku/isolated home/.local/bin/classic-calc
-
-$ /tmp/tmp7chhnvku/isolated home/.local/bin/classic-calc --eval sqrt(81)+2^3
-17
-
-$ sh /mnt/data/german-update/classic-calc/uninstall.sh
-Benutzerinstallation entfernt. Einstellungen und Verlauf bleiben erhalten.
-
-Isolated per-user install/uninstall PASS; paths with spaces; settings preserved.
-
-$ sh -n /mnt/data/german-update/classic-calc/build-deb.sh
-
-$ sh -n /mnt/data/german-update/classic-calc/install.sh
-
-$ sh -n /mnt/data/german-update/classic-calc/uninstall.sh
-
-$ sh -n /mnt/data/german-update/classic-calc/run.sh
-
-ALL PACKAGING CHECKS PASSED
+Linux and Windows source packages: all classiccalc/*.py modules byte-identical.

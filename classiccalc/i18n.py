@@ -1,4 +1,8 @@
-"""German presentation layer; persisted identifiers and the math engine stay stable."""
+"""Switchable German/English presentation; persisted values remain canonical.
+
+There is one UI language per application process. Number/date conversion is
+confined to this module; the arithmetic engine never receives localized values.
+"""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -109,29 +113,65 @@ TRANSLATIONS = {
 }
 
 
+TRANSLATIONS.update({
+    "Language": "Sprache", "Scroll history up": "Im Verlauf nach oben blättern",
+    "Scroll history down": "Im Verlauf nach unten blättern",
+    "Add sample": "Hinz.", "Count = {count}": "Anzahl = {count}",
+    "Could not save calculator settings": "Rechnereinstellungen konnten nicht gespeichert werden",
+})
+LANGUAGES = {"de": "Deutsch", "en": "English"}
+_language = "de"
+
+
+def set_language(language: str) -> None:
+    """Select a supported presentation language (default for new profiles: de)."""
+    if language not in LANGUAGES:
+        raise ValueError(f"Unsupported language: {language!r}")
+    global _language
+    _language = language
+
+
+def get_language() -> str:
+    return _language
+
+
 def tr(text: str) -> str:
-    return TRANSLATIONS.get(text, text)
+    return TRANSLATIONS.get(text, text) if _language == "de" else {"Add sample": "Add"}.get(text, text)
+
+
+def shortcut_text(text: str) -> str:
+    """Localize accelerator labels; physical bindings stay Ctrl/Shift on both OSes."""
+    return text.replace("Ctrl", "Strg").replace("Shift", "Umschalt") if _language == "de" else text
+
+
+def decimal_separator() -> str:
+    return "," if _language == "de" else "."
 
 
 def display_number(text: str) -> str:
-    """Convert canonical decimal/group separators, never doing binary-float math."""
-    return str(text).translate(str.maketrans({".": ",", ",": "."}))
+    """Format canonical decimal/group separators without binary-float conversion."""
+    text = str(text)
+    return text.translate(str.maketrans({".": ",", ",": "."})) if _language == "de" else text
 
 
 _NUMERIC = re.compile(r"(?:\d+(?:[.,]\d*)*|[.,]\d+)(?:[eE][+-]?\d+)?")
+_EN_GROUPED = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d*)?(?:[eE][+-]?\d+)?")
 
 
 def normalize_input(text: str) -> str:
-    """Decimal comma for German input; ungrouped decimal point also accepted.
+    """Convert UI numbers to canonical dot-decimal arithmetic tokens.
 
-    A comma makes dots thousands separators (1.234,5 -> 1234.5). A lone
-    point remains a decimal point for old settings and dot-decimal imports.
-    Multiple grouping dots are allowed only in correctly grouped numbers.
-    The expression parser still validates all tokens; nothing is executed.
+    German: a comma is decimal; dots preceding it are grouping. A lone dot
+    remains accepted as decimal for compatibility with technical input.
+    English: a dot is decimal; commas must form complete thousands groups.
+    Invalid punctuation is retained so the arithmetic parser rejects it rather
+    than silently changing its value. Whitespace grouping is supported.
     """
     text = text.strip().replace("\u00a0", "").replace("\u202f", "")
     def convert(match: re.Match) -> str:
         token = match.group()
+        if _language == "en":
+            return token.replace(",", "") if _EN_GROUPED.fullmatch(token) else token
         if "," in token:
             return token.replace(".", "").replace(",", ".")
         if re.fullmatch(r"\d{1,3}(?:\.\d{3}){2,}", token):
@@ -142,25 +182,42 @@ def normalize_input(text: str) -> str:
 
 MONTHS = ("", "Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember")
 WEEKDAYS = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
+MONTHS_EN = ("", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
+WEEKDAYS_EN = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def month_name(month: int) -> str:
+    return (MONTHS if _language == "de" else MONTHS_EN)[month]
+
+
+def weekday_abbreviations() -> tuple[str, ...]:
+    return ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So") if _language == "de" else ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 
 def date_text(value: date) -> str:
-    return f"{value.day:02d}.{value.month:02d}.{value.year:04d}"
+    return f"{value.day:02d}.{value.month:02d}.{value.year:04d}" if _language == "de" else value.isoformat()
 
 
 def date_input_text(text: str) -> str:
-    try:
-        return date_text(date.fromisoformat(text))
-    except ValueError:
-        return text
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
+        try:
+            return date_text(datetime.strptime(text.strip(), fmt).date())
+        except ValueError:
+            pass
+    return text  # Preserve an unfinished/invalid input across a language change.
 
 
 def date_description(value: date) -> str:
+    if _language == "en":
+        return f"{WEEKDAYS_EN[value.weekday()]}, {value.day:02d} {MONTHS_EN[value.month]} {value.year:04d}"
     return f"{WEEKDAYS[value.weekday()]}, {value.day:02d}. {MONTHS[value.month]} {value.year:04d}"
 
 
 def date_duration(values: dict) -> str:
-    labels = {"years": ("Jahr", "Jahre"), "months": ("Monat", "Monate"), "weeks": ("Woche", "Wochen"), "days": ("Tag", "Tage")}
+    labels = ({"years": ("Jahr", "Jahre"), "months": ("Monat", "Monate"), "weeks": ("Woche", "Wochen"), "days": ("Tag", "Tage")}
+              if _language == "de" else
+              {"years": ("year", "years"), "months": ("month", "months"), "weeks": ("week", "weeks"), "days": ("day", "days")})
     parts = [f"{values[key]} {names[0 if values[key] == 1 else 1]}" for key, names in labels.items() if values[key]]
     count = values["total_days"]
-    return ", ".join(parts or ["0 Tage"]) + f"\n\n{display_number(format(count, ',d'))} {'Tag' if count == 1 else 'Tage'}"
+    days = labels["days"]
+    return ", ".join(parts or [f"0 {days[1]}"]) + f"\n\n{display_number(format(count, ',d'))} {days[0 if count == 1 else 1]}"

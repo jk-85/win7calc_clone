@@ -18,6 +18,7 @@ cp "$HERE/assets/classic-calc.png" "$STAGE/usr/share/icons/hicolor/128x128/apps/
 cp "$HERE/assets/classic-calc.svg" "$STAGE/usr/share/icons/hicolor/scalable/apps/"
 cp "$HERE/README.md" "$HERE/RECREATION_NOTES.md" "$HERE/TEST_REPORT.md" "$HERE/CHANGELOG.md" "$STAGE/usr/share/doc/classic-calc/"
 cp "$HERE/LICENSE" "$STAGE/usr/share/doc/classic-calc/copyright"
+cp -R "$HERE/screenshots" "$STAGE/usr/share/doc/classic-calc/"
 cat > "$STAGE/usr/bin/classic-calc" <<'LAUNCHER'
 #!/bin/sh
 exec /usr/bin/python3 /usr/share/classic-calc/app.py "$@"
@@ -26,7 +27,7 @@ chmod 755 "$STAGE/usr/bin/classic-calc"
 SIZE=$(du -sk "$STAGE/usr" | cut -f1)
 cat > "$STAGE/DEBIAN/control" <<CONTROL
 Package: classic-calc
-Version: 1.1.0
+Version: 1.3.0
 Section: math
 Priority: optional
 Architecture: all
@@ -43,4 +44,4 @@ find "$STAGE" -type d -exec chmod 755 '{}' +
 find "$STAGE/usr/share" -type f -exec chmod 644 '{}' +
 # Stable ordering and timestamps when rebuilding this version.
 export SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-1794312000}
-dpkg-deb --root-owner-group --build "$STAGE" "$OUT/classic-calc_1.1.0_all.deb"
+dpkg-deb --root-owner-group --build "$STAGE" "$OUT/classic-calc_1.3.0_all.deb"

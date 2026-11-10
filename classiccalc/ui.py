@@ -4,6 +4,7 @@ from __future__ import annotations
 import calendar
 import json
 import os
+import sys
 import tempfile
 import traceback
 from datetime import date
@@ -14,7 +15,10 @@ import tkinter as tk
 from tkinter import ttk, font as tkfont, messagebox, filedialog
 
 from . import __version__
-from .i18n import (tr as _, display_number, normalize_input, MONTHS,
+from .platform_support import settings_path
+from .i18n import (tr as _, display_number, normalize_input, LANGUAGES,
+                   set_language, get_language, shortcut_text, decimal_separator,
+                   month_name, weekday_abbreviations,
                    date_text, date_input_text, date_description, date_duration)
 from .widgets import HistoryView, LocalizedCombobox
 from .engine import Calculator, MODES
@@ -42,7 +46,7 @@ def gradient(canvas: tk.Canvas, x: int, y: int, width: int, height: int, top: st
 
 class Tooltip:
     def __init__(self, widget: tk.Widget, text: str):
-        self.widget, self.text = widget, _(text)
+        self.widget, self.text = widget, text
         self.timer = None
         self.window = None
         widget.bind("<Enter>", self.schedule, add="+")
@@ -80,7 +84,7 @@ class ClassicButton(tk.Canvas):
                  kind="function", enabled=True, tooltip=""):
         super().__init__(parent, width=width, height=height, bd=0, highlightthickness=0,
                          background=BG, takefocus=1 if enabled else 0)
-        self.text, self.command, self.text_font = _(text), command, font
+        self.text, self.command, self.text_font = text, command, font
         self.kind, self.enabled = kind, enabled
         self.hover = self.pressed = self.selected = False
         self.bind("<Configure>", self.draw)
@@ -166,10 +170,10 @@ class CalendarPopup(tk.Toplevel):
     def draw(self):
         for child in self.body.winfo_children(): child.destroy()
         ttk.Button(self.body, text=_("‹"), width=3, command=lambda: self.move(-1)).grid(row=0, column=0)
-        tk.Label(self.body, text=_(f"{MONTHS[self.month]} {self.year}"), bg=BG,
+        tk.Label(self.body, text=_(f"{month_name(self.month)} {self.year}"), bg=BG,
                  fg=INK).grid(row=0, column=1, columnspan=5)
         ttk.Button(self.body, text=_("›"), width=3, command=lambda: self.move(1)).grid(row=0, column=6)
-        for c, name in enumerate(("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")):
+        for c, name in enumerate(weekday_abbreviations()):
             tk.Label(self.body, text=_(name), bg=BG, fg=INK, pady=7).grid(row=1, column=c)
         for r, week in enumerate(calendar.monthcalendar(self.year, self.month), 2):
             for c, day in enumerate(week):
@@ -183,11 +187,12 @@ class CalendarPopup(tk.Toplevel):
 
 class CalculatorApp:
     def __init__(self, root: tk.Tk, *, mode: str | None = None, fresh: bool = False,
-                 scale: float = 1.0):
+                 scale: float = 1.0, language: str | None = None):
+        self.language = "de"
         self.root, self.fresh = root, fresh
         self.scale = max(.75, min(3.0, scale))
         self.calc = Calculator()
-        self.config_path = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home()/".config"))) / "classic-calc" / "state.json"
+        self.config_path = settings_path()
         self.aux = "Basic"
         self.history_visible = False
         self.inverse = False
@@ -199,14 +204,20 @@ class CalculatorApp:
         self.worksheet_state: dict[str, dict] = {}
         self.last_aux_result = None
         if not fresh: self.load_state()
+        if language is not None:
+            if language not in LANGUAGES:
+                raise ValueError(f"Unsupported language: {language!r}")
+            self.language = language
+        set_language(self.language)
         if mode: self.calc.set_mode(mode)
         self.root.title(_("Calculator"))
         self.root.configure(bg=BG)
         self.root.resizable(False, False)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.option_add("*tearOff", False)
-        self.root.tk.call("::msgcat::mclocale", "de")
+        self.root.tk.call("::msgcat::mclocale", self.language)
         self.context_menu = None
+        self.help_windows = {}
         families = set(tkfont.families(root))
         self.family = next((f for f in ("Segoe UI", "Liberation Sans", "DejaVu Sans") if f in families), "TkDefaultFont")
         self.mono_family = next((f for f in ("Consolas", "Liberation Mono", "DejaVu Sans Mono") if f in families), "TkFixedFont")
@@ -221,6 +232,7 @@ class CalculatorApp:
         self.style.configure("TEntry", font=self.font, padding=self.px(3))
         self.style.configure("TButton", font=self.font, padding=self.px(4))
         self.style.map("TCombobox", fieldbackground=[("readonly", WHITE)], foreground=[("readonly", INK)])
+        self.language_var = tk.StringVar(root, self.language)
         self.mode_var = tk.StringVar(root, self.calc.mode)
         self.aux_var = tk.StringVar(root, self.aux)
         self.history_var = tk.BooleanVar(root, self.history_visible)
@@ -257,12 +269,12 @@ class CalculatorApp:
             view.add_radiobutton(label=_(mode), variable=self.mode_var, value=mode,
                                  accelerator=f"Alt+{i}", command=partial(self.switch_mode, mode))
         view.add_separator()
-        view.add_checkbutton(label=_("History"), variable=self.history_var, accelerator="Strg+H", command=self.toggle_history)
+        view.add_checkbutton(label=_("History"), variable=self.history_var, accelerator=shortcut_text("Ctrl+H"), command=self.toggle_history)
         view.add_checkbutton(label=_("Digit grouping"), variable=self.group_var, command=self.toggle_grouping)
         view.add_separator()
-        for name, shortcut in (("Basic", "Strg+F4"), ("Unit conversion", "Strg+U"), ("Date calculation", "Strg+E")):
+        for name, shortcut in (("Basic", "Ctrl+F4"), ("Unit conversion", "Ctrl+U"), ("Date calculation", "Ctrl+E")):
             view.add_radiobutton(label=_(name), variable=self.aux_var, value=name,
-                                 accelerator=shortcut, command=partial(self.switch_aux, name))
+                                 accelerator=shortcut_text(shortcut), command=partial(self.switch_aux, name))
         sheets = tk.Menu(view)
         for name in WORKSHEETS:
             sheets.add_radiobutton(label=_(name), variable=self.aux_var, value=name, command=partial(self.switch_aux, name))
@@ -273,14 +285,20 @@ class CalculatorApp:
         for scale in (1, 1.25, 1.5, 2):
             zoom.add_command(label=_(f"{int(scale*100)}%"), command=partial(self.change_scale, scale))
         view.add_cascade(label=_("Interface size"), menu=zoom)
+        languages = tk.Menu(view)
+        for code, label in LANGUAGES.items():
+            languages.add_radiobutton(label=label, variable=self.language_var, value=code,
+                                      command=partial(self.change_language, code))
+        view.add_cascade(label=_("Language"), menu=languages)
+        self.language_menu = languages
         menu.add_cascade(label=_("View"), menu=view, underline=0)
         edit = tk.Menu(menu)
-        edit.add_command(label=_("Copy"), accelerator="Strg+C", command=self.copy)
-        edit.add_command(label=_("Paste"), accelerator="Strg+V", command=self.paste)
+        edit.add_command(label=_("Copy"), accelerator=shortcut_text("Ctrl+C"), command=self.copy)
+        edit.add_command(label=_("Paste"), accelerator=shortcut_text("Ctrl+V"), command=self.paste)
         edit.add_separator()
         edit.add_command(label=_("Edit history calculation"), accelerator="F2", command=self.edit_history)
         edit.add_command(label=_("Copy history"), command=self.copy_history)
-        edit.add_command(label=_("Clear history"), accelerator="Strg+Umschalt+D", command=self.clear_history)
+        edit.add_command(label=_("Clear history"), accelerator=shortcut_text("Ctrl+Shift+D"), command=self.clear_history)
         edit.add_separator()
         edit.add_command(label=_("Import statistics data…"), command=self.import_samples)
         edit.add_command(label=_("Export statistics data…"), command=self.export_samples)
@@ -290,16 +308,23 @@ class CalculatorApp:
         help_menu.add_separator()
         help_menu.add_command(label=_("About Calculator"), command=self.about)
         menu.add_cascade(label=_("Help"), menu=help_menu, underline=0)
+        old_menu = getattr(self, "menu", None)
         self.root.config(menu=menu)
         self.menu, self.view_menu = menu, view
+        if old_menu is not None:
+            old_menu.destroy()
 
     def build(self):
         self.buttons.clear()
         for child in self.body.winfo_children(): child.destroy()
         self.history_list = self.stats_list = self.bit_canvas = None
+        self.history_container = self.history_header = self.history_area = None
+        self.history_up_button = self.history_down_button = None
+        self.history_scrollbar = None
         self.panel_error = None
         main = tk.Frame(self.body, bg=BG, padx=self.px(10), pady=self.px(10))
         main.pack(side="left", anchor="n")
+        self.bind_display_context(main)
         self.columns = 10 if self.calc.mode in ("Scientific", "Programmer") else 5
         self.cell_w, self.cell_h, self.gap = self.px(34), self.px(27), self.px(5)
         self.main_width = self.columns*self.cell_w+(self.columns-1)*self.gap
@@ -344,9 +369,7 @@ class CalculatorApp:
         self.result_id = self.display_canvas.create_text(self.main_width-self.px(7), height-self.px(18),
                                anchor="e", fill="#0c1520", font=self.result_font)
         self.display_canvas.bind("<Double-Button-1>", lambda e: self.copy())
-        self.display_canvas.bind("<Button-3>", self.display_context)
-        self.display_canvas.bind("<Menu>", self.display_context)
-        self.display_canvas.bind("<Shift-F10>", self.display_context)
+        self.bind_display_context(self.display_canvas)
         Tooltip(self.display_canvas, "Double-click to copy the result")
         if self.calc.mode == "Statistics":
             self.stats_list = tk.Listbox(self.display_canvas, bd=0, relief="flat", bg="#edf3fb",
@@ -365,25 +388,36 @@ class CalculatorApp:
             Tooltip(self.stats_list, "Double-click: recall. Delete: remove selected sample.")
 
     def build_history(self, parent):
-        frame = tk.Frame(parent, bg=BG)
+        """One shared history panel for Standard and Scientific on both OSes."""
+        frame = self.history_container = tk.Frame(parent, bg=BG)
         frame.pack(fill="x", pady=(0, self.px(6)))
-        area = tk.Frame(frame, bg=BG)
+        header = self.history_header = tk.Frame(frame, bg=BG)
+        header.pack(fill="x", pady=(0, self.px(3)))
+        title = tk.Label(header, text=_("History"), bg=BG, fg=INK, font=self.small_font)
+        title.pack(side="left")
+        # Draw pale classic-style buttons instead of taking a dark system theme.
+        for direction, glyph, tooltip in ((1, "▼", "Scroll history down"), (-1, "▲", "Scroll history up")):
+            button = ClassicButton(header, glyph, partial(self.scroll_history, direction),
+                                   self.small_font, self.px(24), self.px(20), tooltip=tooltip)
+            button.pack(side="right", padx=(self.px(3), 0))
+            if direction < 0:
+                self.history_up_button = button
+            else:
+                self.history_down_button = button
+        area = self.history_area = tk.Frame(frame, bg=BG)
         area.pack(fill="x")
         self.history_list = HistoryView(area, bg="#f4f8fc", fg=INK,
                                        font=self.small_font, bd=1, relief="solid",
                                        highlightthickness=0, exportselection=False,
                                        padx=self.px(6), pady=self.px(4))
-        scrollbar = ttk.Scrollbar(area, orient="vertical", command=self.history_list.yview)
+        scrollbar = self.history_scrollbar = ttk.Scrollbar(area, orient="vertical", command=self.history_list.yview)
         scrollbar.pack(side="right", fill="y")
-        self.history_list.configure(yscrollcommand=scrollbar.set)
+        self.history_list.configure(yscrollcommand=self.history_scrolled)
         self.history_list.pack(side="left", fill="x", expand=True)
         self.history_list.bind("<Double-Button-1>", self.history_double_click)
         self.history_list.bind("<Return>", lambda e: self.recall_history())
         self.history_list.bind("<Delete>", lambda e: self.delete_history())
         self.history_list.bind("<F2>", lambda e: self.shortcut(self.edit_history))
-        self.history_list.bind("<Button-3>", self.history_context)
-        self.history_list.bind("<Menu>", self.history_context)
-        self.history_list.bind("<Shift-F10>", self.history_context)
         for sequence, command in (("<Control-c>", self.copy_history_result),
                                   ("<Control-v>", self.paste),
                                   ("<Control-h>", self.history_shortcut),
@@ -396,6 +430,26 @@ class CalculatorApp:
             tk.Button(row, text=_(text), command=command, bd=0, bg=BG, fg=BLUE,
                       activebackground=BG, font=self.small_font,
                       padx=self.px(5), pady=1).pack(side="right")
+        # Include the empty margins/header so a right click cannot miss the log.
+        for widget in (frame, header, title, area, scrollbar, row, self.history_list,
+                       self.history_up_button, self.history_down_button):
+            for sequence in ("<Button-3>", "<Menu>", "<Shift-F10>"):
+                widget.bind(sequence, self.history_context)
+
+    def history_scrolled(self, first, last):
+        if self.history_scrollbar is not None:
+            self.history_scrollbar.set(first, last)
+        if self.history_up_button is not None:
+            self.history_up_button.set_enabled(float(first) > 0.000001)
+        if self.history_down_button is not None:
+            self.history_down_button.set_enabled(float(last) < 0.999999)
+
+    def scroll_history(self, direction: int):
+        """Scroll visual lines (including wrapped ones), never recall/delete data."""
+        if self.history_list is not None:
+            self.history_list.yview_scroll(-1 if direction < 0 else 1, "units")
+            self.history_scrolled(*self.history_list.yview())
+        return "break"
 
     def history_double_click(self, event):
         self.history_list.select_item(self.history_list.nearest(event.y))
@@ -427,7 +481,7 @@ class CalculatorApp:
             for col, digit in enumerate(digits):
                 self.command_button("digit_"+digit, digit, row, offset+col, self.calc.input_digit, digit, kind="number")
         self.command_button("digit_0", "0", 5, offset, self.calc.input_digit, "0", colspan=2, kind="number")
-        self.command_button("decimal", ",", 5, offset+2, self.calc.input_digit, ".", kind="number", enabled=not programmer)
+        self.command_button("decimal", decimal_separator(), 5, offset+2, self.calc.input_digit, ".", kind="number", enabled=not programmer)
         for row, op, text in ((2,"/","/"),(3,"*","*"),(4,"-","−"),(5,"+","+")):
             self.command_button(op, text, row, offset+3, self.calc.operator, op)
         self.command_button("percent", "%", 2, offset+4, self.calc.percent, enabled=not programmer)
@@ -558,9 +612,9 @@ class CalculatorApp:
             for col,digit in enumerate(digits):
                 self.command_button("digit_"+digit,digit,row,col,self.calc.input_digit,digit,kind="number")
         self.command_button("digit_0","0",5,0,self.calc.input_digit,"0",colspan=2,kind="number")
-        self.command_button("decimal",",",5,2,self.calc.input_digit,".",kind="number")
+        self.command_button("decimal",decimal_separator(),5,2,self.calc.input_digit,".",kind="number")
         self.command_button("sign","±",5,3,self.calc.sign)
-        self.command_button("add","Hinz.",5,4,self.calc.add_sample,tip=_("Add displayed value to the dataset (Enter)"))
+        self.command_button("add",_("Add sample"),5,4,self.calc.add_sample,tip=_("Add displayed value to the dataset (Enter)"))
         stats = ((2,"mean","x̄","mean_square","x̄²"),(3,"sum","Σx","sum_square","Σx²"),
                  (4,"population_sd","σₙ","sample_sd","σₙ₋₁"))
         for row,a,al,b,bl in stats:
@@ -604,7 +658,7 @@ class CalculatorApp:
                 self.stats_list.delete(0,"end")
                 if entries: self.stats_list.insert("end",*entries)
                 self.stats_list.see("end")
-            self.display_canvas.itemconfigure(self.count_id,text=_(f"Anzahl = {len(entries)}"))
+            self.display_canvas.itemconfigure(self.count_id,text=_("Count = {count}").format(count=len(entries)))
         if self.history_list is not None:
             entries = [f"{display_number(item['expression'])} = {display_number(item['result'])}"
                        for item in self.current_history()]
@@ -626,6 +680,35 @@ class CalculatorApp:
     def toggle_history(self):
         self.history_visible = bool(self.history_var.get())
         self.remember_panel(); self.build()
+
+    def change_language(self, language: str):
+        """Rebuild presentation, retaining the engine, history, and utility inputs."""
+        if language not in LANGUAGES:
+            raise ValueError(f"Unsupported language: {language!r}")
+        if language == self.language:
+            return
+        # Normalize edited fields using the OLD locale before changing it.
+        self.remember_panel()
+        selection = self.history_list.curselection() if self.history_list is not None else ()
+        position = self.history_list.yview()[0] if self.history_list is not None else None
+        if self.context_menu is not None:
+            self.context_menu.unpost()
+            self.context_menu.destroy()
+            self.context_menu = None
+        self.language = language
+        set_language(language)
+        self.language_var.set(language)
+        self.root.tk.call("::msgcat::mclocale", language)
+        self.root.title(_("Calculator"))
+        self.refresh_help_windows()
+        self.make_menu()
+        self.build()
+        if self.history_list is not None:
+            if selection:
+                self.history_list.select_item(selection[0])
+            if position is not None:
+                self.history_list.yview_moveto(position)
+        self.save_state()
 
     def toggle_grouping(self):
         self.calc.grouping = bool(self.group_var.get()); self.update()
@@ -851,12 +934,19 @@ class CalculatorApp:
         except (CalcError,DecimalException) as exc:
             self.worksheet_result.set("");self.last_aux_result=None;self.panel_error.set(_(str(exc)))
 
+    @staticmethod
+    def canonical_date(text):
+        try:
+            return parse_date(text).isoformat()
+        except CalcError:
+            return text
+
     def remember_panel(self):
         if self.aux=="Unit conversion" and hasattr(self,"conv_category"):
             self.unit_state={"category":self.conv_category.get(),"source":self.conv_source.get(),
                              "target":self.conv_target.get(),"value":normalize_input(self.conv_input.get())}
         elif self.aux=="Date calculation" and hasattr(self,"date_operation"):
-            self.date_state={"operation":self.date_operation.get(),"from":self.date_from.get(),"to":self.date_to.get(),
+            self.date_state={"operation":self.date_operation.get(),"from":self.canonical_date(self.date_from.get()),"to":self.canonical_date(self.date_to.get()),
                              "years":self.date_years.get(),"months":self.date_months.get(),"days":self.date_days.get(),
                              "sign":self.date_sign.get()}
         elif self.aux in WORKSHEETS and hasattr(self,"worksheet_inputs"):
@@ -877,25 +967,27 @@ class CalculatorApp:
         except tk.TclError: return
         if self.calc.mode != "Programmer":
             text = normalize_input(text)
-        elif self.calc.radix == 10 and "." in text:
+        elif self.calc.radix == 10:
             import re
-            if re.fullmatch(r"[+-]?\d{1,3}(?:\.\d{3})+", text.strip()):
-                text = text.replace(".", "")
+            separator = "." if self.language == "de" else ","
+            pattern = r"[+-]?\d{1,3}(?:" + re.escape(separator) + r"\d{3})+"
+            if re.fullmatch(pattern, text.strip()):
+                text = text.replace(separator, "")
         self.act(self.calc.paste,text)
 
     def make_context_menu(self, *, history=False):
         """Build the same four actions for display and history, without posting."""
         menu = tk.Menu(self.root, tearoff=False)
-        menu.add_command(label=_("Copy"), accelerator="Strg+C",
+        menu.add_command(label=_("Copy"), accelerator=shortcut_text("Ctrl+C"),
                          command=self.copy_history_result if history else self.copy,
                          state="normal" if (self.current_history() if history else not self.calc.error) else "disabled")
-        menu.add_command(label=_("Paste"), accelerator="Strg+V", command=self.paste)
+        menu.add_command(label=_("Paste"), accelerator=shortcut_text("Ctrl+V"), command=self.paste)
         menu.add_separator()
         supported = self.calc.mode in ("Standard", "Scientific")
         menu.add_command(label=_("Hide history" if self.history_visible else "Show history"),
-                         accelerator="Strg+H", command=self.hide_history if self.history_visible else self.history_shortcut,
+                         accelerator=shortcut_text("Ctrl+H"), command=self.hide_history if self.history_visible else self.history_shortcut,
                          state="normal" if supported else "disabled")
-        menu.add_command(label=_("Clear history"), accelerator="Strg+Umschalt+D", command=self.clear_history,
+        menu.add_command(label=_("Clear history"), accelerator=shortcut_text("Ctrl+Shift+D"), command=self.clear_history,
                          state="normal" if supported and self.current_history() else "disabled")
         return menu
 
@@ -913,11 +1005,17 @@ class CalculatorApp:
             menu.grab_release()
         return "break"
 
+    def bind_display_context(self, widget):
+        for sequence in ("<Button-3>", "<Menu>", "<Shift-F10>"):
+            widget.bind(sequence, self.display_context)
+
     def display_context(self, event):
         return self.post_context(self.make_context_menu(), event)
 
     def history_context(self, event):
-        if getattr(event, "num", None) == 3:
+        if self.history_list is None:
+            return self.display_context(event)
+        if getattr(event, "num", None) == 3 and event.widget is self.history_list:
             self.history_list.select_item(self.history_list.nearest(event.y))
         self.history_list.focus_set()
         return self.post_context(self.make_context_menu(history=True), event)
@@ -1072,8 +1170,13 @@ class CalculatorApp:
 
     def key(self,event):
         if self.editing_widget(event) or event.widget.winfo_class()=="Listbox" or isinstance(event.widget, HistoryView):return None
-        if event.state & (0x4|0x8):return None
         char,key=event.char,event.keysym
+        # German Windows AltGr emits Ctrl+Alt for @, | and ~. Allow only
+        # mathematical punctuation; ordinary Ctrl/Alt shortcuts stay untouched.
+        altgr_math = (sys.platform == "win32" and event.state & 0x4
+                      and event.state & (0x8 | 0x20000) and char in ("@", "|", "~"))
+        if event.state & (0x4 | 0x8 | (0x20000 if sys.platform == "win32" else 0)) and not altgr_math:
+            return None
         if key in ("Return","KP_Enter","equal"):
             self.act(self.calc.add_sample if self.calc.mode=="Statistics" else self.calc.equals);return "break"
         if key=="Escape":self.act(self.calc.clear);return "break"
@@ -1126,25 +1229,36 @@ class CalculatorApp:
         frame=tk.Frame(window,bg=BG,padx=16,pady=16);frame.pack(fill="both",expand=True)
         text=tk.Text(frame,width=75,height=29,wrap="word",font=self.font,padx=10,pady=10,bg=WHITE,fg=INK)
         text.pack(fill="both",expand=True)
-        text.insert("1.0",HELP_TEXT);text.configure(state="disabled")
-        ttk.Button(frame,text=_("Close"),command=window.destroy).pack(anchor="e",pady=(10,0))
+        text.insert("1.0",HELP_TEXT if self.language == "de" else HELP_TEXT_EN);text.configure(state="disabled")
+        close_button = ttk.Button(frame,text=_("Close"),command=window.destroy)
+        close_button.pack(anchor="e",pady=(10,0))
+        self.help_windows[window] = (text, close_button)
+        window.bind("<Destroy>", lambda e: self.help_windows.pop(window, None) if e.widget is window else None)
         window.bind("<Escape>",lambda e:window.destroy())
 
+    def refresh_help_windows(self):
+        for window, (text, close_button) in list(self.help_windows.items()):
+            if not window.winfo_exists():
+                self.help_windows.pop(window, None)
+                continue
+            window.title(_("Calculator Help"))
+            text.configure(state="normal")
+            text.delete("1.0", "end")
+            text.insert("1.0", HELP_TEXT if self.language == "de" else HELP_TEXT_EN)
+            text.configure(state="disabled")
+            close_button.configure(text=_("Close"))
+
     def about(self):
-        messagebox.showinfo(_("About Calculator"), f"Klassischer Rechner {__version__}\n\n"
-            "Eigenständig entwickelte, Linux-native Nachbildung des klassischen Windows-7-Rechners.\n\n"
-            "Python 3 + Tk. Kein Wine, keine Windows-Bibliotheken oder übernommenen Microsoft-Grafiken. "
-            "Keine Telemetrie und kein Netzwerkzugriff.\n\n"
-            "60 Stellen Rechengenauigkeit; bis zu 32 angezeigte signifikante Stellen.\n"
-            "64/32/16/8-Bit-Arithmetik im Zweierkomplement.\n\n"
-            "Kein Microsoft-Produkt. Pixelidentische Darstellung und identisches Verhalten "
-            "in numerischen Grenzfällen sind nicht garantiert.", parent=self.root)
+        text = 'Eigenständig entwickelte Nachbildung des klassischen Windows-7-Rechners für Windows und Linux.\n\nPython 3 + Tk. Kein Wine und keine übernommene Rechnerdatei oder Microsoft-Grafiken. Keine Telemetrie und kein Netzwerkzugriff.\n\n60 Stellen Rechengenauigkeit; bis zu 32 angezeigte signifikante Stellen.\n64/32/16/8-Bit-Arithmetik im Zweierkomplement.\n\nKein Microsoft-Produkt. Pixelidentische Darstellung und identisches Verhalten in numerischen Grenzfällen sind nicht garantiert.' if self.language == "de" else "Independently developed recreation of the classic Windows 7 calculator for Windows and Linux.\n\nPython 3 + Tk. No Wine, Microsoft calculator binary, or Microsoft graphics. No telemetry or network access.\n\n60 working digits; up to 32 significant display digits.\n64/32/16/8-bit two's-complement arithmetic.\n\nNot a Microsoft product. Pixel-identical rendering and identical behavior in numerical edge cases are not guaranteed."
+        messagebox.showinfo(_("About Calculator"), f"{_('Classic Calculator')} {__version__}\n\n{text}", parent=self.root)
 
     def load_state(self):
         try:
             if not self.config_path.exists() or self.config_path.stat().st_size>2_000_000:return
             state=json.loads(self.config_path.read_text(encoding="utf-8"))
             if not isinstance(state,dict):return
+            language = state.get("language", "de")
+            self.language = language if language in LANGUAGES else "de"
             mode=state.get("mode")
             if mode in MODES:self.calc.mode=mode
             if state.get("angle") in ("Degrees","Radians","Gradians"):self.calc.angle=state["angle"]
@@ -1189,7 +1303,7 @@ class CalculatorApp:
     def save_state(self):
         if self.fresh:return
         self.remember_panel()
-        state={"version":2,"number_format":"canonical","mode":self.calc.mode,"angle":self.calc.angle,"radix":self.calc.radix,"bits":self.calc.bits,
+        state={"version":2,"language":self.language,"number_format":"canonical","mode":self.calc.mode,"angle":self.calc.angle,"radix":self.calc.radix,"bits":self.calc.bits,
                "grouping":self.calc.grouping,"memory":str(self.calc.memory),"memory_set":self.calc.memory_set,
                "aux":self.aux,"history_visible":self.history_visible,"history":self.calc.history,"samples":[str(v) for v in self.calc.samples],
                "unit":self.unit_state,"dates":self.date_state,"worksheets":self.worksheet_state}
@@ -1201,7 +1315,7 @@ class CalculatorApp:
                 temp=Path(stream.name);json.dump(state,stream,ensure_ascii=False,indent=2);stream.flush();os.fsync(stream.fileno())
             temp.replace(self.config_path)
         except OSError as exc:
-            print(f"Rechnereinstellungen konnten nicht gespeichert werden: {exc}")
+            print(f"{_('Could not save calculator settings')}: {exc}")
         finally:
             if temp is not None and temp.exists():
                 try:temp.unlink()
@@ -1212,6 +1326,8 @@ class CalculatorApp:
 
 
 HELP_TEXT = """KLASSISCHER RECHNER
+
+Unter Ansicht > Sprache wählen Sie Deutsch oder English. Die Sprache wird ohne Neustart gewechselt und gespeichert; Zahlen-/Datumsformat, Hilfetexte und Kontextmenüs wechseln mit. Berechnung, Speicher, Verlauf und Statistikdaten bleiben erhalten. Englisch verwendet einen Dezimalpunkt und ein Komma für vollständige Tausendergruppen; für englische Datumsfelder gilt JJJJ-MM-TT. Standard ist Deutsch.
 
 Unter Ansicht wählen Sie Standard, Wissenschaftlich, Programmierer oder Statistik. Die Zusatzbereiche für Einheitenumrechnung, Datumsberechnung und Arbeitsblätter lassen sich mit jedem Modus kombinieren.
 
@@ -1231,7 +1347,7 @@ STATISTIK
 Geben Sie einen Wert ein und klicken Sie auf Hinz. oder drücken Sie die Eingabetaste. Ein Doppelklick übernimmt einen gespeicherten Wert; Entf löscht den ausgewählten Wert. CAD löscht alle Daten. x̄ ist der Mittelwert, x̄² der Mittelwert der Quadrate, Σx die Summe, Σx² die Quadratsumme, σₙ die Standardabweichung der Grundgesamtheit und σₙ₋₁ die Stichprobenstandardabweichung. Bearbeiten bietet Datenimport und -export. Beim Import trennen Zeilenumbrüche, Leerzeichen oder Semikolons die Werte; das Komma ist ein Dezimalzeichen, kein Spaltentrenner.
 
 VERLAUF UND ZWISCHENABLAGE
-Ansicht > Verlauf oder Strg+H zeigt bzw. verbirgt den rechtsbündigen Verlauf für den aktuellen Standard- oder wissenschaftlichen Modus. Auch lange, umgebrochene Zeilen bleiben rechtsbündig. Ein Doppelklick oder die Eingabetaste übernimmt das Ergebnis; Pfeiltasten wählen Einträge aus. F2 bearbeitet die Berechnung. Entf löscht den ausgewählten Eintrag.
+Ansicht > Verlauf oder Strg+H zeigt bzw. verbirgt den rechtsbündigen Verlauf für den aktuellen Standard- oder wissenschaftlichen Modus. Auch lange, umgebrochene Zeilen bleiben rechtsbündig. Die hellen ▲-/▼-Tasten oben rechts blättern den Verlauf zeilenweise nach oben/unten, ohne Werte zu übernehmen. Am jeweiligen Rand sind sie deaktiviert. Ein Doppelklick oder die Eingabetaste übernimmt das Ergebnis; Pfeiltasten wählen Einträge aus. F2 bearbeitet die Berechnung. Entf löscht den ausgewählten Eintrag.
 
 Ein Rechtsklick auf den Verlauf öffnet Kopieren, Einfügen, Verlauf ausblenden und Verlauf löschen. Kopieren übernimmt das Ergebnis des angeklickten Eintrags mit voller Genauigkeit. Einfügen übernimmt die Zwischenablage in den Rechner und verändert nicht die Verlaufszeile. Verlauf ausblenden behält die Einträge bei; Verlauf löschen bzw. Strg+Umschalt+D löscht nur den Verlauf des aktuellen Modus. Das Kontextmenü ist auch per Umschalt+F10 oder Menütaste erreichbar. Bearbeiten > Verlauf kopieren kopiert alle Berechnungen des aktuellen Modus.
 
@@ -1247,10 +1363,46 @@ Hypotheken- und Leasingarbeitsblätter verwenden vereinfachte Monatsratenmodelle
 TASTATUR
 Alt+1/2/3/4: Modi. Strg+U: Einheiten. Strg+E: Datum. Strg+F4: Basis. Alt+C: Zusatzbereich berechnen. Esc: C. Entf: CE. Rücktaste: Ziffer löschen. F9: Vorzeichen. Strg+M/R/L/P/Q: MS/MR/MC/M+/M−. F5/6/7/8: Hex/Dec/Oct/Bin. F12/F2/F3/F4 im Programmierermodus: Qword/Dword/Word/Byte.
 
-Wissenschaftlich: I Umkehrfunktionen, S sin, O cos, T tan, N ln, L log, P pi, Q Quadrat, Y Potenz, D Mod, M dms, X Exp, V F-E. @ Quadratwurzel, R Kehrwert, ! Fakultät. F1: Hilfe. Ansicht > Oberflächengröße skaliert die Darstellung.
+Wissenschaftlich: I Umkehrfunktionen, S sin, O cos, T tan, N ln, L log, P pi, Q Quadrat, Y Potenz, D Mod, M dms, X Exp, V F-E. @ Quadratwurzel, R Kehrwert, ! Fakultät. F1: Hilfe. Ansicht > Oberflächengröße skaliert die Darstellung. Unter Windows wird beim Start die System-DPI-Skalierung verwendet; --scale setzt stattdessen eine feste Skalierung. Bei einem Wechsel auf einen Monitor mit anderer Skalierung starten Sie den Rechner neu oder wählen die Größe im Menü.
 
 DATENSCHUTZ UND KOMPATIBILITÄT
-Kein Netzwerkzugriff und keine Telemetrie. Einstellungen, Speicher, Verlauf und Statistikdaten werden in ~/.config/classic-calc/state.json gespeichert (bzw. unter XDG_CONFIG_HOME). --fresh verhindert das Lesen und Schreiben dieser Datei. Vorhandene Daten der englischen Version bleiben verwendbar.
+Kein Netzwerkzugriff und keine Telemetrie. Einstellungen, Speicher, Verlauf und Statistikdaten werden unter Windows in %APPDATA%/ClassicCalc/state.json gespeichert. Unter Linux bleibt es bei ~/.config/classic-calc/state.json (bzw. XDG_CONFIG_HOME). --fresh verhindert das Lesen und Schreiben dieser Datei. Vorhandene Daten der englischen Version bleiben verwendbar.
 
-Diese eigenständige Nachbildung enthält Microsofts Rechnerdatei weder als Bestandteil noch wird sie ausgeführt. Linux-Fensterrahmen, Schriftarten, Barrierefreiheit und numerische Grenzfälle können vom Windows-Original abweichen.
+Diese eigenständige Nachbildung enthält Microsofts Rechnerdatei weder als Bestandteil noch wird sie ausgeführt. Fensterrahmen, Schriftarten, Barrierefreiheit und numerische Grenzfälle können vom Windows-Original abweichen.
+"""
+
+
+HELP_TEXT_EN = """CLASSIC CALCULATOR
+
+View > Language > Deutsch / English switches the complete interface immediately and saves the preference. Pending calculations, memory, history, samples and utility inputs are retained. A new profile defaults to German. English uses a decimal point and commas in complete thousands groups (1,234.56); German uses a decimal comma (1.234,56). Pasted numbers follow the active language. The decimal key and numeric keypad accept either decimal separator. Clipboard output is ungrouped with full internal precision. --eval always outputs a canonical decimal point.
+
+View selects Standard, Scientific, Programmer, and Statistics. The auxiliary unit conversion, date calculation and worksheet panels work alongside any mode.
+
+STANDARD
+Calculations run immediately, left to right: 2 + 3 × 4 = 20. Scientific mode honors precedence, so the same sequence gives 14. CE clears the current entry; C clears the calculation. Repeated = repeats the last operation. For addition/subtraction, % uses the left operand as the percentage base: 200 + 10 % = 220. For multiplication/division, % divides the entered operand by 100.
+
+SCIENTIFIC
+Choose Degrees, Radians or Grads. Inv changes trigonometric, hyperbolic, logarithmic, Int and dms functions. Exp enters a base-10 exponent; F9 changes its sign. F-E toggles scientific notation. Parentheses and powers honor precedence. dms converts decimal degrees to packed degrees.minutes-seconds; Inv + dms reverses it. Up to 32 significant digits are displayed; arithmetic uses 60 working digits.
+
+PROGRAMMER
+Hex/Dec/Oct/Bin and Qword/Dword/Word/Byte select the base and 64/32/16/8-bit width. Decimal values are signed; other bases show the two's-complement bit pattern. Arithmetic wraps at the selected word width. Division truncates toward zero. Rsh is a logical zero-fill shift. RoL and RoR rotate one bit. Click the bit display to toggle a bit. Unsupported digits and floating-point functions are disabled.
+
+STATISTICS
+Enter each number, then click Add or press Enter. Double-click a sample to recall it; select it and press Delete to remove it. CAD clears the dataset. x̄ is the mean, x̄² the mean of the squared observations, Σx the sum, Σx² the sum of squares, σₙ the population standard deviation and σₙ₋₁ the sample standard deviation. Edit offers text/CSV data import and export: one number per line, or separate values by whitespace or semicolons. A comma is NOT a CSV column delimiter; in English it may form thousands groups. Exports contain one value per line.
+
+HISTORY AND CLIPBOARD
+View > History or Ctrl+H shows/hides a right-aligned log in both Standard and Scientific mode, including wrapped calculations. The pale ▲ / ▼ buttons at its top right scroll one visual line; they disable at the upper/lower boundary. They never change a calculation. Up/Down on the keyboard select records. Double-click or Enter recalls the selected result. F2 edits it; Delete removes only that record.
+
+Right-click a history row or its empty area for Copy, Paste, Hide history, and Clear history. Shift+F10 or the Menu key also opens this menu. Copy uses the selected entry's full-precision result. Paste enters the clipboard into the calculator, not the log. Hide preserves all records; Clear or Ctrl+Shift+D removes only the active mode's records. The result display has the same menu (Show history when hidden). View > History is unavailable in Programmer and Statistics modes.
+
+Ctrl+C on the display copies the full ungrouped value. Ctrl+V accepts numbers or safe arithmetic expressions, including sin(...), sqrt(...), pi and e. No Python code is executed. In Programmer mode, paste an integer in the selected base or with a 0x/0o/0b prefix.
+
+UTILITIES
+Unit conversion updates automatically; either value field can be edited. US and UK volumes are explicitly distinguished. Mach uses a fixed 340.3 m/s reference. English dates use YYYY-MM-DD; German dates use DD.MM.YYYY; both forms are accepted; the calendar button selects a date. Date differences are absolute, and month/year additions clamp to the last valid day of the destination month. Mortgage and lease worksheets use simplified monthly payment models, excluding taxes, fees, insurance and lender-specific rules. They are calculators, not quotations.
+
+KEYBOARD
+Alt+1/2/3/4: modes. Ctrl+U: units. Ctrl+E: dates. Ctrl+F4: basic. Alt+C: calculate the auxiliary panel. Escape: C. Delete: CE. Backspace: remove digit. F9: sign. Ctrl+M/R/L/P/Q: MS/MR/MC/M+/M−. F5/6/7/8: Hex/Dec/Oct/Bin. F12/F2/F3/F4: Qword/Dword/Word/Byte in Programmer mode. Scientific: I inverse, S sin, O cos, T tan, N ln, L log, P pi, Q square, Y power, D Mod, M dms, X Exp, V F-E. @ square root, R reciprocal, ! factorial. F1: help. View > Interface size scales the layout. On Windows, startup uses system DPI scaling unless --scale overrides it. Restart or select a size after moving to a monitor with a different scale.
+
+PRIVACY AND COMPATIBILITY
+No network access or telemetry. Preferences, memory, history and statistics are saved in %APPDATA%/ClassicCalc/state.json on Windows, or ~/.config/classic-calc/state.json (under XDG_CONFIG_HOME when set) on Linux. --fresh avoids reading or writing this file. This independent recreation does not include or execute Microsoft's calculator binary. Linux window decorations, fonts, accessibility support and edge-case numerical behavior can differ from the Windows original.
 """

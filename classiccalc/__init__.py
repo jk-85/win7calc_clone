@@ -1,2 +1,2 @@
-"""Classic Calc: an independently written, Linux-native classic calculator."""
-__version__ = "1.1.0"
+"""Classic Calc: an independently written classic calculator for Windows/Linux."""
+__version__ = "1.3.0"
