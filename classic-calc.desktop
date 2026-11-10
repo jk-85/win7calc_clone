@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Klassischer Rechner
+GenericName=Rechner
+Comment=Klassischer Rechner mit wissenschaftlichen Funktionen, Programmierer, Statistik und Arbeitsblättern
+Exec=classic-calc
+Icon=classic-calc
+Terminal=false
+Categories=Utility;Calculator;
+Keywords=Rechner;Taschenrechner;Wissenschaftlich;Programmierer;Statistik;Einheiten;Datum;Hypothek;
+StartupNotify=true
+StartupWMClass=ClassicCalc
