@@ -1,6 +1,6 @@
 # Klassischer Rechner 1.1.0 – deutsche Linux-Version
 
-Eigenständig entwickelte Nachbildung des klassischen Windows-7-Rechners als
+Entwickelte Nachbildung des klassischen Windows-7-Rechners als
 native Python/Tk-Anwendung. Die Windows-Datei `calc.exe` wird nicht benötigt,
 nicht ausgeführt und nicht mitgeliefert. Zielplattform ist Linux Mint x64.
 
